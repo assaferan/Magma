@@ -1,4 +1,4 @@
-//freeze;
+freeze;
 /*
     Dependencies: utils.m, chars.m
 
@@ -1271,7 +1271,7 @@ intrinsic GL2IsAgreeable(H::GrpMat) -> BoolElt
     return GL2DeterminantIndex(H) eq 1 and GL2ScalarIndex(H) eq 1 and Set(PrimeDivisors(GL2Level(H))) join {2} eq Set(PrimeDivisors(SL2Level(H))) join {2};
 end intrinsic;
 
-// As suggested by Emir Karabiyik, there is no need to compute the level of commutator subgroup of H
+// As suggested by Eray Karabiyik, there is no need to compute the level of commutator subgroup of H
 intrinsic GL2AgreeableClosure(H::GrpMat)->GrpMat
 { Computes the agreeable closure }
     require not assigned H`SL: "H should be a subgroup of GL2 that is not marked as a subgroup of SL2";
@@ -3137,11 +3137,13 @@ end intrinsic;
 intrinsic GL2QuadraticTwists(H::GrpMat : IncludeGeneric:=true) -> SeqEnum[GrpMat]
 { Given a subgroup H of GL(2,Z/NZ), returns the list of subgroups K of <H,-I> := G for which <K,-I> = G (including H), up to conjugacy in GL2. }
     R := BaseRing(H); N := #R;  if not IsFinite(N) then assert H eq gl2N1; return IncludeGeneric select [H] else []; end if;
-    S := [K`subgroup:K in MaximalSubgroups(G:IndexEqual:=2)|not nI in K`subgroup] where nI := -Identity(H) where G:=GL2IncludeNegativeOne(H); 
+    HH := GL2IncludeNegativeOne(H);
+    S := [K`subgroup:K in MaximalSubgroups(HH:IndexEqual:=2)|not nI in K`subgroup] where nI := -Identity(H); 
     G := GL2Ambient(N);
-    if #S gt 1 then S := GL2RemoveConjugates(S,G); end if;
+    if #S gt 1 then S := GL2RemoveConjugates(S,GL2Ambient(N)); end if;
     for i:=1 to #S do S[i]`NegOne := false; S[i]`Index := G`Order div S[i]`Order; end for;
-    return IncludeGeneric select [G] cat S else S;
+    if IncludeGeneric and not assigned HH`Index then HH`Index := G`Order div HH`Order; end if;
+    return IncludeGeneric select [HH] cat S else S;
 end intrinsic;
 
 intrinsic GL2QuarticCMTwists(N::RngIntElt : NegOneOnly:=false) -> SeqEnum[GrpMat]
@@ -3202,7 +3204,7 @@ end intrinsic;
 intrinsic GL2RationalCMPoints(H::GrpMat) -> SeqEnum[RngIntElt]
 { List of CM discriminants of CM elliptic curves corresponding to Q-points on X_H. }
     require GL2DeterminantIndex(H) eq 1: "Subgroup must have determininant index 1 (parametrizing E/Q).";
-    if GL2ScalarIndex(H) gt 1 then return [Integers()|]; end if;
+    //if GL2ScalarIndex(H) gt 1 then return [Integers()|]; end if;
     N,H := GL2Level(GL2IncludeNegativeOne(H));
     if N eq 1 then return CMdiscs; end if;
     ZZ := Integers();

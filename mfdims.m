@@ -1,5 +1,13 @@
-// dependencies
-// Attach("chars.m");
+freeze;
+
+/*
+    Dependencies: utils.m
+
+    This module implements various intrinsics for efficiently computing Q-dimensions of spaces of modular forms.
+    The TraceForm intrinsic shells out to Pari/GP and won't work if gp is not installed.
+    
+    Copyright (c) Andrew V. Sutherland, 2017-2025.  See License file for details on copying and usage.
+*/
 
 ZZ := Integers();
 QQ := Rationals();
@@ -45,11 +53,6 @@ function CO (N,n,k)
     mu_k := kmod3 eq 1 select 0 else (kmod3 eq 2 select -1/3 else 1/3) where kmod3 := k mod 3;
     return -(1/2) * &*[lambda(fN[i][2],fC[i][2],fN[i][1]) : i in [1..#fN]] + gamma_k * &*[CO_delta(a[2],a[1],N,n) : a in fN] + mu_k * &*[CO_nu(a[2],a[1],N,n) : a in fN];
 end function;
-
-intrinsic AnalyticConductor(N::RngIntElt,k::RngIntElt) -> FldReElt
-{ The analytic conductor of newforms of level N and weight k. }
-    return N*(Exp(Psi(k/2))/(2*Pi(RealField())))^2;
-end intrinsic;
 
 intrinsic QDimension (S::ModSym) -> RngIntElt
 { Q-dimension of the space of modular symbols S. }
