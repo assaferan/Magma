@@ -21,12 +21,12 @@ freeze;
 
     Please cite this paper if you use this software in your research.
 
-    Copyright (c) Andrew V. Sutherland, 2019-2024.  See License file for details on copying and usage.
+    Copyright (c) Andrew V. Sutherland, 2019-2025.  See License file for details on copying and usage.
 */
 
 /*** caching ***/
 
-// Most of this is not used here but it's convenient to setup everything here
+// Most of this is not used in this module but it is convenient to setup everything here
 
 declare attributes RngInt: GL2Cache, SL2Cache;
 ZZ := Integers();
@@ -1538,7 +1538,7 @@ end intrinsic;
 
 intrinsic GL2SplitCartanK1(R::RngIntRes) -> GrpMat
 { The subgroup of the standard split Cartan subgroup of GL(2,R) consisting of diagonal matrices with +/-1 in the upper left. }
-    if #R eq 2 then return sub<GL(2,R)|[]>; end if;
+    if #R eq 2 then H:=sub<GL(2,R)|[]>; H`Index := GL2Index(H); H`Level := 2; H`NegOne := true; return H; end if;
     m,pi := MultiplicativeGroup(R); gm := [pi(g):g in Generators(m)];
     H := sub<GL(2,R) | [[1,0,0,g] : g in gm] cat [[-1,0,0,-1]]>;
     N := #R; H`Order := 2*EulerPhi(N); H`Index := GL2Size(N) div H`Order; H`Level := N; H`NegOne := true;
