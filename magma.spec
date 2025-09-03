@@ -1,7 +1,10 @@
 {
     utils.m
     chars.m
+    genus2euler.m
     tracehash.m
+    mfdims.m
+    mfutils.m
     genus1.m
     gl2base.m
     gl2points.m

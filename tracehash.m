@@ -1,5 +1,9 @@
 freeze;
 
+// depends on genus2euler.m to hande primes of almost good reduction for genus 2 curves efficiently
+// uses EulerFactor for primes in [2^12,2^13] of bad reduction for the Jacobian, which may be slow
+// For genus 2 curves it would be faster to use Pari/GP's lfungenus, but this requires Pari/GP 2.18
+
 c:=[326490430436040986,559705121321738418,1027143540648291608,1614463795034667624,455689193399227776,
     812966537786397194,2073755909783565705,1309198521558998535,486216762465058766,1847926951704044964,
     2093254198748441889,566490051061970630,150232564538834691,1356728749119613735,987635478950895264,
@@ -133,12 +137,12 @@ end intrinsic;
 
 intrinsic TraceHash(E1::CrvEll[FldRat],E2::CrvEll[FldRat]) -> RngIntElt
 { Given elliptic curves E1 and E2 over Q computes the hash sum_(2^12<p<2^13) (a_p(E1)+a_p(E2))*c_p mod 2^61-1 defined in Sec 4.3 of https://doi.org/10.1112/S146115701600019X. }
-    return TraceHash(func<p|TraceOfFrobenius(E1,p)+TraceOfFrobenius(E2,p)>);
+    return (TraceHash(E1)+TraceHash(E2)) mod p where p:=2^61-1;
 end intrinsic;
 
 intrinsic TwistHash(E1::CrvEll[FldRat],E2::CrvEll[FldRat]) -> RngIntElt
 { Given elliptic curves E1 and E2 over Q computes the hash sum_(2^12<p<2^13) |a_p(E1)+a_p(E2)|*c_p mod 2^61-1 defined in Sec 4.3 of https://doi.org/10.1112/S146115701600019X. }
-    return TraceHash(func<p|TraceOfFrobenius(E1,p)+TraceOfFrobenius(E2,p)>);
+    return TwistHash(func<p|TraceOfFrobenius(E1,p)+TraceOfFrobenius(E2,p)>);
 end intrinsic;
 
 intrinsic SlowTraceHash(C::CrvHyp[FldRat]) -> RngIntElt
@@ -149,12 +153,14 @@ end intrinsic;
 strip := func<s|Join(Split(Join(Split(s," "),""),"\n"),"")>;
 sprint := func<X|strip(Sprintf("%o",X))>;
 
+euler := func<C,p|Genus(C) eq 2 and Conductor(C,p) eq 0 select Genus2AlmostGoodEulerFactor(C,p) else EulerFactor(C,p)>;
+
 intrinsic TraceHash(C::CrvHyp[FldRat]) -> RngIntElt
 { Given a hyperelliptic curve C/Q computes the hash sum_(2^12<p<2^13) a_p(C)*c_p mod 2^61-1 defined in Sec 4.3 of https://doi.org/10.1112/S146115701600019X. }
     if Genus(C) ne 2 then return SlowTraceHash(C); end if;
     R<x> := PolynomialRing(Rationals());
     a := [StringToInteger(s): s in Split(strip(Pipe("hashcurves " cat sprint([Eltseq(f),Eltseq(h)] where f,h:=HyperellipticPolynomials(C)),"")),",")];
-    return #a eq 1 select a[1] else Integers()!(F!a[1]+&+[F!-Coefficient(EulerFactor(C,p),1)*c[#PrimesUpTo(p)-564] where p:=a[i]:i in [2..#a]]) where F := GF(2^61-1);
+    return #a eq 1 select a[1] else Integers()!(F!a[1]+&+[F!-Coefficient(euler(C,p),1)*c[#PrimesUpTo(p)-564] where p:=a[i]:i in [2..#a]]) where F := GF(2^61-1);
 end intrinsic;
 
 intrinsic TwistHash(C::CrvHyp[FldRat]) -> RngIntElt
@@ -162,13 +168,25 @@ intrinsic TwistHash(C::CrvHyp[FldRat]) -> RngIntElt
     require Genus(C) eq 2: "Currently supported only for genus 2 curves";
     R<x> := PolynomialRing(Rationals());
     a := [StringToInteger(s): s in Split(strip(Pipe("hashcurves " cat sprint([Eltseq(f),Eltseq(h)] where f,h:=HyperellipticPolynomials(C)) cat " -1","")),",")];
-    return #a eq 1 select a[1] else Integers()!(F!a[1]+&+[F!Abs(Coefficient(EulerFactor(C,p),1))*c[#PrimesUpTo(p)-564] where p:=a[i]:i in [2..#a]]) where F := GF(2^61-1);
+    return #a eq 1 select a[1] else Integers()!(F!a[1]+&+[F!Abs(Coefficient(euler(C,p),1))*c[#PrimesUpTo(p)-564] where p:=a[i]:i in [2..#a]]) where F := GF(2^61-1);
 end intrinsic;
 
-intrinsic TraceHash(C::CrvPln) -> RngIntElt
+intrinsic TraceHash(C::CrvPln[FldRat]) -> RngIntElt
 { Given a smooth plane quartic curve C/Q computes the hash sum_(2^12<p<2^13) a_p(C)*c_p mod 2^61-1 defined in Sec 4.3 of https://doi.org/10.1112/S146115701600019X. }
     require not IsSingular(C) and IsProjective(C) and Degree(C) eq 4 and Genus(C) eq 3: "C should be a smooth plane quartic";
     return TraceHash(TracesOfFrobenius(C,2^13:B0:=2^12));
+end intrinsic;
+
+intrinsic TraceHash(C::CrvPln[FldRat], E::CrvEll[FldRat]) -> RngIntElt
+{ Given a smooth plane quartic curve C/Q and an elliptic curve E/q computes the hash sum_(2^12<p<2^13) (a_p(C)-a_p(E))*c_p mod 2^61-1 defined in Sec 4.3 of https://doi.org/10.1112/S146115701600019X. }
+    require not IsSingular(C) and IsProjective(C) and Degree(C) eq 4 and Genus(C) eq 3: "C should be a smooth plane quartic";
+    return (TraceHash(C)-TraceHash(E)) mod p where p:=2^61-1;
+end intrinsic;
+
+intrinsic TraceHash(C::CrvHyp[FldRat], E::CrvEll[FldRat]) -> RngIntElt
+{ Given a hyperelliptic curve C/Q of genus 3 and an elliptic curve E/q computes the hash sum_(2^12<p<2^13) (a_p(C)-a_p(E))*c_p mod 2^61-1 defined in Sec 4.3 of https://doi.org/10.1112/S146115701600019X. }
+    require Genus(C) eq 3: "C should be a hyperelliptic curve of genus 3";
+    return (TraceHash(C)-TraceHash(E)) mod p where p:=2^61-1;
 end intrinsic;
 
 intrinsic TraceHash(E::CrvEll[FldNum[FldRat]]) -> RngIntElt

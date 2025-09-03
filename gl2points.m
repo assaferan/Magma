@@ -398,6 +398,14 @@ intrinsic GL2Traces(H::GrpMat,B::RngIntElt:B0:=1,PrimePowers:=false,ZeroFill:=fa
     end if;
 end intrinsic;
 
+intrinsic GL2TraceHash(H::GrpMat) -> RngIntElt
+{ Returns the trace hash of the modular curve X_H, the sum_(2^12<p<2^13) ap(p)*c_p mod 2^61-1 defined in Sec 4.3 of https://doi.org/10.1112/S146115701600019X. }
+    N,H:=GL2Level(H);
+    require &and[p lt 2^12 or p gt 2^13:p in PrimeDivisors(N)]: "The level of H cannot be divisible by a prime in [2^12,2^13].";
+    if N lt 6 then return 0; end if;
+    return TraceHash(GL2Traces(H,8192:B0:=4096));
+end intrinsic;
+
 intrinsic GL2PointCounts(H::GrpMat,p::RngIntElt,r::RngIntElt) -> SeqEnum[RngIntElt]
 { The sequence of Fq-point counts on X_H/Fq for q=p,p^2,...,p^r for a prime power p. }
     return GL2PointCounts(H,[p^i:i in [1..r]]);
@@ -426,9 +434,7 @@ intrinsic GL2IsogenyClass(H::GrpMat) -> MonStgElt, RngIntElt
     badi := {#PrimesUpTo(p):p in P};
 
     // Computes an integer M so that the conductor of any elliptic curve E/Q with good reduction outside P divides M.
-    M := &*[p^2:p in P];
-    if 2 in P then M *:= 2^6; end if;
-    if 3 in P then M *:= 3^3; end if;
+    M := GCD(N^2,2^8*3^5*&*[Integers()|p^2:p in P|p gt 3]);
 
     D:=EllipticCurveDatabase();
     assert M lt LargestConductor(D);  // Ensures that J is isomorphic to a curve in the current database
@@ -466,7 +472,7 @@ intrinsic GL2QInfinite(H::GrpMat:MustContainNegativeOne:=false) -> BoolElt
 end intrinsic;
 
 intrinsic GL2QObstructions(H::GrpMat:g:=-1,B:=0,T:=[],C:=[]) -> SeqEnum[RngIntElt]
-{ List of good places p where X_H has no Qp-points (p=0 is used for the real place). When specified, g:=GL2Genus(H), T:=GL2Traces(H,B), C:=GL2RationalCuspCounts(H).  B will set to NthPrime(T) if T is nonempty or to 4*g^2 if neither B nor T is specified. }
+{ List of good places p where X_H has no Qp-points (p=0 is used for the real place). Whent specified, g:=GL2Genus(H), T:=GL2Traces(H,B), C:=GL2RationalCuspCounts(H).  B will set to NthPrime(T) if T is nonempty or to 4*g^2 if neither B nor T is specified. }
     N,H := GL2Level(GL2IncludeNegativeOne(H)); if N eq 1 then return [Integers()|]; end if;
     require GL2DeterminantIndex(H) eq 1: "H must have determinant index 1.";
     G := GL2Ambient(N); inv := GL2SimilarityClassMap(N);
@@ -488,35 +494,44 @@ intrinsic GL2QObstructions(H::GrpMat:g:=-1,B:=0,T:=[],C:=[]) -> SeqEnum[RngIntEl
 end intrinsic;
 
 intrinsic GL2GonalityBounds(H::GrpMat:B:=8192,ratcuspcnts:=[],ratpts:=-2,g:=-1,psl2index:=-1) -> SeqEnum[RngIntElt], RngIntElt
-{ Returns a quadriuple listing lower and upper bounds on the K-gonality of X_H (valid for any number field K) followed by lower and upper bounds on the Qbar-gonality, and (optionally) a prime power used to prove lower bounds via point-counting. }
-    N,H := GL2Level(GL2IncludeNegativeOne(H)); if N eq 1 then return [1,1,1,1], 0; end if;
-    D := GL2DeterminantImage(H);  dindex := GL1Index(D);
+{ Returns a quadruple listing lower and upper bounds on the Q-gonality of X_H followed by lower and upper bounds on the Qbar-gonality (the genus > 1 the lower bounds for Q and Qbar will be the same).
+  The second return value is the prime power used to prove lower bounds via point-counting (or 0 if not relevant).
+  The third return value is the first prime power not checked (or 0 if none were checked); this is the least prime power for which lb*(q+1) exceeds the Weil bound q+1*2*g*sqrt(q), where lb is the lower bound on the Qbar-gonality.
+  Except for special handling of genus 0,1,2 curves, this algorithm computes gonality upper bounds as the minimum of the degree of the map to X(1) and either g+1 or 2*g-1 (depending on whether rational points are known or not, for qbar they always are),
+  and computes gonality lower bounds using the Abramovich-Kim-Sarnak bound gon_Qbar(X_H) >= 325*psl2index/2^15 and the bounds gon_Qbar(X_H) >= #X_H(Fq)/(q+1) for each prime power q.
+
+}
+    require GL2DeterminantIndex(H) eq 1: "H must have determinant index 1";
+    N,H := GL2Level(GL2IncludeNegativeOne(H)); if N eq 1 then return [1,1,1,1], 0, 0; end if;
     if g lt 0 or psl2index lt 0 then g,gdata := GL2Genus(H); psl2index := gdata[1]; end if;
     /*
       set ratpts to 0 if we know there is an obstruction to R-points or Qp-points for some good p
       set ratpts to 1 if we know there are rational cusps or CM points, or when g=0 and level is prime power and there are no obstructions at good p (#obstructions must be even in this case)
       set ratpts to -1 otherwise
-      (for the purpose of computiung Qbar-gonality bounds we implicitly have ratpts=1)
     */
     if ratpts lt -1 or ratpts gt 1 then
-        ratpts := dindex eq 1 select ((GL2RationalCuspCount(H) gt 0 or #GL2RationalCMPoints(H) gt 0) select 1 else (not GL2ContainsComplexConjugation(H) select 0 else ((g eq 0 and IsPrimePower(N)) select 1 else -1))) else -1;
+        ratpts := (GL2RationalCuspCount(H) gt 0 or #GL2RationalCMPoints(H) gt 0) select 1 else (not GL2ContainsComplexConjugation(H) select 0 else ((g eq 0 and IsPrimePower(N)) select 1 else -1));
     end if;
-    if g eq 0 then return [ratpts eq 0 select 2 else 1,ratpts gt 0 select 1 else 2,1,1], 0; end if;
-    if (g eq 1 and ratpts gt 0) or g eq 2 then return [2,2,2,2], 0; end if;
-    lb := Max(2,Ceiling(325*psl2index/32768)); // Abramovich bound lower bound on C-gonality = Qbar-gonality <= Q-gonality using Kim-Sarnak bound of 975/4096 for Selberg eigenvalue bound
+    if g eq 0 then return [ratpts eq 0 select 2 else 1,ratpts gt 0 select 1 else 2,1,1], 0, 0; end if;
+    if (g eq 1 and ratpts gt 0) or g eq 2 then return [2,2,2,2], 0, 0; end if;
+    lbbar := Max(2,Ceiling(325*psl2index/32768)); // Abramovich bound lower bound on C-gonality = Qbar-gonality <= Q-gonality using Kim-Sarnak bound of 975/4096 for Selberg eigenvalue bound
     ub := GL2Index(H); // degree of j-map to X(1) = P^1 is always an upper bound
     if ratpts gt 0 then ub := Min(ub,g gt 1 select g else g+1); elif g gt 1 then ub := Min(ub,2*g-2); end if;
-    if lb eq ub then return [lb,ub,lb,ub], 0; end if;
-    ubbar := Min(ub,g gt 1 select g else g+1);
+    if lbbar eq ub then return [lbbar,ub,lbbar,ub], 0; end if;
+    ubbar := Min(ub,(g+3) div 2); // See Prop A.1(v) in https://math.mit.edu/~poonen/papers/gonality.pdf
     htab := ClassNumberTable(2^16);
     C := #ratcuspcnts gt 0 select ratcuspcnts else GL2RationalCuspCounts(H);
     f := GL2PermutationCharacter(H);
-    pts := dindex gt 1 select func<q|GL1![q] in D select GL2PointCount(N,htab,f,C,q) else 0> else func<q|GL2PointCount(N,htab,f,C,q)> where GL1 := GL(1,Integers(N));
+    pts := func<q|GL2PointCount(N,htab,f,C,q)> where GL1 := GL(1,Integers(N));
     Q := [q:q in PrimePowers(Min(4*g*g,B))|GCD(q,N) eq 1];
+    qq := 0; lq := 0;
+    lb := lbbar;
     for q in Q do
-        if lb*(q+1) gt q+1+2*g*Sqrt(q) then break; end if;
+        if lb*(q+1) gt q+1+2*g*Sqrt(q) then qq:=q; break; end if;
         n := pts(q);
-        if n gt lb*(q+1) then lb := Ceiling(n/(q+1)); end if; // #X_H(Fq) <= gon_Qbar(X_H)*#X(1)(Fq) for q coprime to the level
+        // #X_H(Fq) <= gon_Fq(X_H)*(q+1) for q coprime to the level since the gonal map has q+1 fibers of size <= gon_Fq(X_H)
+        // this implies gon_Q(X_H) >= gon_Fq(X_H) >= #X_H(Fq)/(q+1)
+        if n gt lb*(q+1) then lb := Ceiling(n/(q+1)); lq := q; end if;
     end for;
-    return [lb,ub,lb,ubbar];
+    return [lb,ub,lbbar,ubbar],lq,qq;
 end intrinsic;

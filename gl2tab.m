@@ -1,5 +1,4 @@
 freeze;
-
 /*
     Dependencies: utils.m, gl2base.m
 
@@ -553,7 +552,7 @@ intrinsic GL2LookupLabel(Z::Tup, H::GrpMat : NotFound:="?") -> MonStgElt
         grp := func<r|r[2]>;
     end if;
     S := filter(S); if #S eq 0 then return NotFound; end if;
-    T := Conjugates(G,H);
+    T := Conjugates(G,H); // here we hope that the index of H in the normalizer of <H,-I> is not too bad
     for i:=1 to #S do if grp(S[i]) in T then return S[i][1]; end if; end for;
     return NotFound;
     M := [i:i in [1..#S]|grp(S[i]) in T];  if #M eq 0 then return NotFound; end if; assert #M eq 1;
