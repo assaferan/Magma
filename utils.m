@@ -937,7 +937,7 @@ intrinsic NumberOfRoots(f::RngUPolElt[FldFin]) -> RngIntElt
 { The number of rational roots of the polynomial f. }
     a := SquareFreeFactorization(f);
     b := [DistinctDegreeFactorization(r[1]:Degree:=1):r in a];
-    return &+[a[i][2]*(#b[i] gt 0 select Degree(b[i][1][2]) else 0):i in [1..#a]];
+    return &+[Integers()|a[i][2]*(#b[i] gt 0 select Degree(b[i][1][2]) else 0):i in [1..#a]];
 end intrinsic;
 
 intrinsic TracesToLPolynomial (t::SeqEnum[RngIntElt], q::RngIntElt) -> RngUPolElt
@@ -948,7 +948,7 @@ intrinsic TracesToLPolynomial (t::SeqEnum[RngIntElt], q::RngIntElt) -> RngUPolEl
     g := #t;
     // use Newton identities to compute compute elementary symmetric functions from power sums
     e := [t[1]];  for k:=2 to g do e[k] := ExactQuotient((-1)^(k-1)*t[k]+&+[(-1)^(i-1)*e[k-i]*t[i]:i in [1..k-1]],k); end for;
-    return R!([1] cat [(-1)^i*e[i]:i in [1..g]] cat [(-1)^i*q^i*e[g-i]:i in [1..g-1]] cat [q^g]);
+    return R!([1] cat [(-1)^i*e[i]:i in [1..g]] cat [(-1)^(g-i)*q^i*e[g-i]:i in [1..g-1]] cat [q^g]);
 end intrinsic;
 
 intrinsic PointCountsToLPolynomial (n::SeqEnum[RngIntElt], q::RngIntElt) -> RngUPolElt
@@ -1016,3 +1016,67 @@ intrinsic ParallelJobs (cmd::MonStgElt, jobs::RngIntElt, workers::RngIntElt:infi
     System(Sprintf("rm %o %o %o",jobfile,jobsfile,logfile));
     vprintf ParallelJobs: "ParallelJobs parallel execution of %o jobs using %o workers%o took %.3os (\"%o\")\n", #joblist, workers, okay eq Set(joblist) select "" else " failed and", Realtime()-timer, cmd;
 end intrinsic
+
+intrinsic PrimeCount (n::RngIntElt) -> RngIntElt
+{ Returns pi(n) (using primecount). }
+    return atoi(Pipe("primecount " cat itoa(n),""));
+end intrinsic;
+
+intrinsic PrimeCount (m::RngIntElt,n::RngIntElt) -> RngIntElt
+{ Returns pi(n)-pi(m-1) (using primecount). }
+    return n ge m select PrimeCount(n)-PrimeCount(m-1) else 0;
+end intrinsic;
+
+intrinsic SmoothNumberCount (P::SeqEnum[RngIntElt], B::RngIntElt) -> RngIntElt
+{ Counts the positive integers <= B whose prime factors lie in P. The primality of the integers in P is not verified.  }
+    require B gt 0: "B must be positive";
+    S := []; for p in P do Append(~S,p); q := p*p; while q lt B do Append(~S,q); q *:= q; end while; end for;
+    S := Sort(S);
+    T:=[1]; cnt := 0;
+    for s in S do
+        Q:=[]; Tmax := B div s; Qmax := Tmax div s;
+        Q := [n:n in T|n le Tmax]; cnt +:= #T-#Q; assert #T-#Q eq #(Set(T) diff Set(Q));
+        T := [n*s:n in Q|n le Qmax]; cnt +:= #Q-#T; assert #Q-#T eq #(Set([n*s:n in Q]) diff Set(T));
+        T cat:= Q;
+    end for;
+    return cnt + #T;
+end intrinsic;
+
+intrinsic SmoothNumbers (P::SeqEnum[RngIntElt], B::RngIntElt: B0:=1) -> SeqEnum[RngIntElt]
+{ Returns a list of the integers in [B0,B] whose prime factors lie in P (B0=1 if unspecified). The primality of the integers in P is not verified.  }
+    require B0 gt 0 and B ge B0: "B0 <= B must be positive";
+    S := []; for p in P do Append(~S,p); q := p*p; while q lt B do Append(~S,q); q *:= q; end while; end for;
+    S := Sort(S);
+    T:=[1]; L := [];
+    for s in S do
+        Q:=[]; Tmax := B div s; Qmax := Tmax div s;
+        Q := [n:n in T|n le Tmax];
+        L cat:= [n:n in T|n ge X] where X:=Max(B0,Tmax+1);
+        T := [n*s:n in Q|n le Qmax];
+        L cat:= [n*s:n in Q|n ge X] where X:=Max((B0+s-1) div s,Qmax+1);
+        T cat:= Q;
+    end for;
+    L cat:= [n:n in T|n ge B0]; L := Sort(L);
+    return L;
+end intrinsic;
+
+intrinsic PowerClassRepresentative (a::RngIntElt, p::RngIntElt, n::RngIntElt:Root:=false) -> RngIntElt
+{ Returns the least nonnegative integer b for which a*c^n = b for some c in Fp (intended for small n, this will be very slow if gcd(n,p-1) is large). }
+    require IsProbablePrime(p): "p must be prime";
+    require n gt 0: "n most be positive";
+    a := a mod p; if a le 1 then return a; end if;
+    n := GCD(p-1,n);
+    if n eq 1 then return 1; end if;
+    e := (p-1) div n;
+    ai := GF(p)!1/a;
+    for b:=1 to p-1 do if (b*ai)^e eq 1 then return b; end if; end for;
+    error Sprintf("No power class representative found for a=%o, p=%o, n=%o\n",a,p,n);
+end intrinsic;
+
+intrinsic PowerClassRepresentative (a::FldFinElt, n::RngIntElt) -> RngIntElt
+{ Returns the least nonnegative integer b for which a = b*c^n for some c in Fp (intended for small n, this will be very slow if gcd(n,p-1) is large). }
+    p := #Parent(a);
+    require IsProbablePrime(p): "finite field must have prime order";
+    return PowerClassRepresentative(Integers()!a,p,n);
+end intrinsic;
+
