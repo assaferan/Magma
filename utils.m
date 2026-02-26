@@ -1,4 +1,4 @@
-freeze;
+//freeze;
 /*
     General purpose utilities (often things I wished Magma supported directly) and aliases/wrappers for Magma functions to make them easer for me to use and/or remember.
 
@@ -753,65 +753,231 @@ intrinsic CoefficientString(C::Crv) -> SeqEnum
     return sprint(Coefficients(C));
 end intrinsic;
 
-function CanonicalizeRationalInvariants (v,w)
-    assert #v eq #w;
-    I := [i:i in [1..#v]|v[i] ne 0];
-    if #I eq 0 then return v; end if;
-    d := LCM([Denominator(a):a in v]);
-    for p in PrimeDivisors(d) do
-        n := Max([Ceiling(Valuation(Denominator(v[i]),p)/w[i]):i in I]);
-        if n gt 0 then v := [p^(n*w[i])*v[i]:i in [1..#v]]; end if;
-    end for;
-    v := [Integers()!a:a in v];
-    O := [i:i in I|IsOdd(w[i])];
-    if #O gt 0 and v[O[1]] lt 0 then v := [(-1)^w[i]*v[i]:i in [1..#v]]; end if;
-    d := GCD(v);
-    for p in PrimeDivisors(d) do
-        n := Min([Floor(Valuation(v[i],p)/w[i]):i in I]);
-        if n gt 0 then v := [ExactQuotient(v[i],p^(n*w[i])):i in [1..#v]]; end if;
-    end for;
-    return v;
-end function;
-
-intrinsic NormalizedDixmierOhnoInvariants (f::RngMPolElt) -> SeqEnum
-{ Normalized Dixmier-Ohno invaraints of smooth plane quartic f(x,y,z)=0 defined over Q. }
-    require VariableWeights(Parent(f)) eq [1,1,1] and IsHomogeneous(f) and Degree(f) eq 4: "Input muste be a ternary quartic form.";
-    R := BaseRing(Parent(f));
-    require Type(R) eq FldRat or Type(R) eq RngInt: "Curve must be defined over Q.";
-    inv, w := DixmierOhnoInvariants(f:normalize);
-    return CanonicalizeRationalInvariants(inv,w);
+intrinsic facpat(f::RngUPolElt:SquareFree:=false) -> SetMulti[RngIntElt]
+{ Returns the factorization pattern of the univariate polynomial f(x) (specificed by its coefficients). }
+    if IsFinite(BaseRing(f)) then
+        return Degree(f) le 0 select {**} else (SquareFree select {* a[1]^^(Degree(a[2]) div a[1]) : a in DistinctDegreeFactorization(f) *}
+                                          else &join[{* a[1]^^(Degree(a[2]) div a[1]) : a in DistinctDegreeFactorization(b[1]) *}: b in SquarefreeFactorization(f)]);
+    else
+        return Degree(f) le 0 select {**} else {* Degree(a[1])^^a[2] : a in Factorization(f) *};
+    end if;
 end intrinsic;
 
-intrinsic NormalizedShiodaInvariants (C::CrvHyp) -> SeqEnum
+intrinsic facpat(f::SeqEnum[RngIntElt]:SquareFree:=false) -> SetMulti[RngIntElt]
+{ Returns the factorization pattern of the univariate polynomial f(x) (specificed by its coefficients). }
+    return facpat(PolynomialRing(Integers())!f:SquareFree:=SquareFree);
+end intrinsic;
+
+intrinsic facpat(f::RngUPolElt, p::RngIntElt:SquareFree:=false) -> SetMulti[RngIntElt]
+{ Returns the factorization pattern of the univariate polynomial f(x) modulo p (specificed by its coefficients). }
+    return facpat(ChangeRing(f,GF(p)):SquareFree:=SquareFree);
+end intrinsic;
+
+intrinsic facpat(f::SeqEnum[RngIntElt], p::RngIntElt:SquareFree:=false) -> SetMulti[RngIntElt]
+{ Returns the factorization pattern of the univariate polynomial f(x) (specificed by its coefficients). }
+    return facpat(PolynomialRing(GF(p))!f:SquareFree:=SquareFree);
+end intrinsic;
+
+intrinsic EasyFactorization(n::RngIntElt:TrialDivisionLimit:=2^20,ECMLimit:=1000,PrimeLimit:=200,mLimit:=40,nECMLimit:=800,nLimit:=4000) -> RngIntEltFact, RngIntElt
+{ Attempts to factor the specified nonzero integer n using a bounded amount of effort by setting ECMLimit to a fixed value (default is 1000) and MPQSLimit:=0, and bounding the size of primes allowed in the factorization (default is 100 decimal digits) and the size of the input integer n (default is 1000 decimal digits).
+  If succesful the full (provably correct) factorization is returned, followed by the sign; otherwise a (provably correct) partial factorization and zero are returned. }
+    if Abs(n) le 10^mLimit then return Factorization(n), Sign(n); end if;
+    if Abs(n) eq 1 then return [], n; end if;
+    require Abs(n) gt 1: "Input must be nonzero";
+    d := Log(10,Abs(n));
+    if d gt nLimit then return [],0; end if;
+    P,s,E := Factorization(n:TrialDivisionLimit:=TrialDivisionLimit,ECMLimit:=d gt nECMLimit select 0 else ECMLimit,MPQSLimit:=0,Proof:=false);
+    if assigned E then
+        if Max([Log(10,Abs(e)):e in E]) gt nECMLimit then return P,0; end if;
+        E := &cat[n eq 0 select [e] else [n,e div n] where n:=ECMSteps(e,250,1000):e in E];
+        if #E eq 1 then
+            if E[1] le 10^mLimit then P cat:= Factorization(E[1]); else s:=0; end if;
+        else
+            Q := CoprimeBasis(E);
+            for q in Q do
+                PP,ss,EE := Factorization(q[1]:TrialDivisionLimit:=TrialDivisionLimit,ECMLimit:=ECMLimit,MPQSLimit:=0,Proof:=false);
+                if assigned EE then s:=0; end if;
+                P cat:= [<p[1],p[2]*q[2]>:p in PP];
+            end for;
+        end if;
+        P := Eltseq({*p[1]^^p[2]:p in P*});
+    end if;
+    pmax := 10^PrimeLimit;
+    for i:=1 to #P do if P[i][1] gt pmax or not IsPrime(P[i][1]) then return P[1..i-1],0; end if; end for;
+    return P,s;
+end intrinsic;
+
+intrinsic PrimeDivisors(S::SeqEnum[RngIntElt] : AllowComposites:=false) -> SeqEnum[RngIntElt], SeqEnum[RngIntElt]
+{ Given a sequence of integers S, returns a sequence primes optionally followed by a sequence of composites,
+  such that the elements in the two lists together form a factor basis for S: every element in the lists divides an element of s, no two have a common factor,
+  and every element of s is a product of powers of elements in these lists.  When composites are allowed EasyFactorization will be used to avoid expensive factorizations. }
+    S := CoprimeBasis([Abs(n):n in S|Abs(n) gt 1]);
+    S := [s[1]:s in S];
+    if not AllowComposites then return Sort(&cat[PrimeDivisors(n):n in S]), true; end if;
+    P := []; sts := true;
+    for n in S do
+        i:=#P+1;
+        Q,s := EasyFactorization(n);
+        P cat:= [q[1]:q in Q];
+        if s eq 0 then
+            P cat:= [n div &*[Integers()|q[1]^q[2]:q in Q]];
+            sts := false;
+        end if;
+    end for;
+    return Sort(P), sts;
+end intrinsic;
+
+intrinsic Valuation(r::FldRatElt,p::RngIntElt,isprime::BoolElt) -> RngIntElt
+{ Given a rational number r and a positive integer p returns the least integer n such the denominator of r/p^n is coprime to p.
+  When isprime is true this function computes the p-adic valuation using Valuation(r,p). }
+    if r eq 0 or isprime then return Valuation(r,p); end if;
+    n := 0;
+    while IsDivisibleBy(Numerator(r),p^(n+1)) do n+:=1; end while;
+    if n gt 0 then return n; end if;
+    while GCD(Denominator(r*p^n),p) ne 1 do n+:=1; end while;
+    return -n;
+end intrinsic;
+
+intrinsic NormalizedProjectiveInvariants (v::SeqEnum[FldRatElt], w::SeqEnum[RngIntElt] : Easy:=false) -> SeqEnum, FldRatElt, BoolElt
+{ Given a list of rational numbers v and a corresponding positive integer weights w, returns a list of integers z and a nonzero rational number r such that z[i] = v[i]*r^w[i] for all i.
+  The Easy parameter can be used to avoid hard-to-factor integers.
+  The third return value indicates whether the returned vector z is gauranteed to be minimal (it may be false if Easy is set). }
+    require #v eq #w: "The sequences v and w  must have the same length.";
+    require &or[c ne 0:c in v]: "At least one entry of v must be nonzero.";
+    require &and[c gt 0: c in w]: "The weights must be positive.";
+    P,b := PrimeDivisors(&cat[[Numerator(c),Denominator(c)]:c in v]:AllowComposites:=Easy);
+    r := &*[Rationals()|p^Min([Floor(Valuation(v[i],p,b)/w[i]):i in [1..#v]|v[i] ne 0]):p in P];
+    z := [Integers()|v[i]*r^(-w[i]):i in [1..#v]];
+    O := [i:i in [1..#z]|z[i] ne 0 and IsOdd(w[i])];
+    if #O gt 0 and v[O[1]] lt 0 then z := [Integers()|(-1)^w[i]*z[i]:i in [1..#z]]; r := -r; end if;
+    return z,r,b;
+end intrinsic;
+
+intrinsic NormalizedIgusaClebschInvariants (C::CrvHyp : Easy:=false) -> SeqEnum
+{ Normalized Igusa-Clebsch invariants of genus 2 hyperelliptic curve (the invariants must lie in Q or Fp, but the curve need not be defined over Q or Fp). }
+    inv := IgusaClebschInvariants(C); F := BaseRing(C);
+    if IsFinite(F) and IsPrime(#F) then
+        if #F eq 2 then return inv; end if;
+        p := #F;
+        ZZ := Integers(); R<t> := PolynomialRing(F);
+        if inv[1] ne 0 then
+            return [1,c^2*inv[2],c^3*inv[3],c^5*inv[5]] where c := 1/inv[1];
+        elif inv[2] ne 0 then
+            r := PowerClassRepresentative(inv[2],2); c := Roots(t^2-r/inv[2])[1][1];
+            inv1 := [0,r,c^3*inv[3],c^5*inv[5]]; c:=-c;
+            inv2 := [0,r,c^3*inv[3],c^5*inv[5]];
+            return i where i:=Min([inv1,inv2]);
+        elif inv[3] ne 0 then
+            r := PowerClassRepresentative(inv[3],3); c := Roots(t^3-r/inv[3])[1][1];
+            inv1 := [0,0,r,c^4*inv[4],c^5*inv[5]];
+            if p mod 3 ne 1 then return inv; end if;
+            z := (R!PrimitiveRoot(p))^((p-1) div 3);
+            c *:= z; inv2 := [0,0,r,c^5*inv[5]];
+            c *:= z; inv3 := [0,0,r,c^5*inv[5]];
+            return a where a:=Min([inv1,inv2,inv3]);
+        else
+            return [0,0,0,0,PowerClassRepresentative(inv[5],5)];
+        end if;
+    end if;
+    require &and[c in Rationals():c in inv]: "The Igusa-Clebsch invariants must lie in Q or Fp.";
+    return z where z:=NormalizedProjectiveInvariants([Rationals()!c:c in inv], [1,2,3,5] : Easy:=Easy);
+end intrinsic;
+
+intrinsic NormalizedIgusaInvariants (C::CrvHyp : Easy:=false) -> SeqEnum
+{ Normalized Igusa invariants of genus 2 hyperelliptic curve (the invariants must lie in Q, but the curve need not be defined over Q).
+  The optional parameter Bound can be used to restrict the primes that can be used in the normalization when the invariants lie in Q. }
+    inv := IgusaInvariants(C); F := BaseRing(C);
+    if IsFinite(F) and IsPrime(#F) then
+        if #F eq 2 then return inv; end if;
+        p := #F;
+        ZZ := Integers(); R<t> := PolynomialRing(F);
+        if inv[1] ne 0 then
+            return [1,c^2*inv[2],c^3*inv[3],c^4*inv[4],c^5*inv[5]] where c := 1/inv[1];
+        elif inv[2] ne 0 then
+            r := PowerClassRepresentative(inv[2],2); c := Roots(t^2-r/inv[2])[1][1];
+            inv1 := [0,r,c^3*inv[3],c^4*inv[4],c^5*inv[5]]; c:=-c;
+            inv2 := [0,r,c^3*inv[3],c^4*inv[4],c^5*inv[5]];
+            return i where i:=Min([inv1,inv2]);
+        elif inv[3] ne 0 then
+            r := PowerClassRepresentative(inv[3],3); c := Roots(t^3-r/inv[3])[1][1];
+            inv1 := [0,0,r,c^4*inv[4],c^5*inv[5]];
+            if p mod 3 ne 1 then return inv1; end if;
+            z := (R!PrimitiveRoot(p))^((p-1) div 3);
+            c *:= z; inv2 := [0,0,r,c^4*inv[4],c^5*inv[5]];
+            c *:= z; inv3 := [0,0,r,c^4*inv[4],c^5*inv[5]];
+            return a where a:=Min([inv1,inv2,inv3]);
+        elif inv[4] ne 0 then
+            r := PowerClassRepresentative(inv[4],4); c := Roots(t^4-r/inv[4])[1][1];
+            inv1 := [0,0,0,r,c^5*inv[5]];
+            c := -c; inv2 := [0,0,0,r,c^5*inv[5]];
+            if p mod 4 ne 1 then
+                return i where i:=Min([inv1,inv2]);
+            else
+                z := (R!PrimitiveRoot(p))^((p-1) div 4);
+                c *:= z; inv3 := [0,0,0,r,c^5*inv[5]];
+                c := -c; inv4 := [0,0,0,r,c^5*inv[5]];
+                return i where i:=Min([inv1,inv2,inv3,inv4]);
+            end if;
+        else
+            return [0,0,0,0,PowerClassRepresentative(inv[5],5)];
+        end if;
+    end if;
+    require &and[c in Rationals():c in inv]: "The Igusa-Clebsch invariants must lie in Q or Fp.";
+    return z where z:=NormalizedProjectiveInvariants([Rationals()!c:c in inv], [1,2,3,4,5] : Easy:=Easy);
+end intrinsic;
+
+intrinsic NormalizedModularIgusaInvariants (C::CrvHyp : Easy:=false) -> SeqEnum
+{ Returns the "modular invariants" of the genus 2 curve C as defined in arXiv:2301.10118.
+    The optional parameter Bound can be used to restrict the primes that can be used in the normalization when the invariants lie in Q. }
+    I := IgusaClebschInvariants(C);
+    require &and[c in Rationals():c in I]: "The Igusa-Clebsch invariants must lie in Q.";
+    J := [I[2]/4,(I[1]*I[2]-3*I[3])/8,-I[4]/4096,I[1]*I[4]/2^15];
+    return z where z:=NormalizedProjectiveInvariants(J, [2,3,5,6] : Easy:=Easy);
+end intrinsic;
+
+intrinsic NormalizedShiodaInvariants (C::CrvHyp : Easy:=false) -> SeqEnum
 { Normalized Shioda invariants of genus 3 hyperelliptic curve (the invariants must lie in Q, but the curve need not be defined over Q). }
     require Genus(C) eq 3: "Genus 3 curve required.";
     inv, w := ShiodaInvariants(C);
     inv := WPSNormalize(w,inv);
     require &and[c in Rationals():c in inv]: "The Shioda invariants must lie in Q.";
-    return CanonicalizeRationalInvariants([Rationals()!c:c in inv],w);
+    return z where z:=NormalizedProjectiveInvariants([Rationals()!c:c in inv],w : Easy:=Easy);
 end intrinsic;
 
-intrinsic NormalizedShiodaInvariants (f::RngUPolElt,h::RngUPolElt) -> SeqEnum
+intrinsic NormalizedShiodaInvariants (f::RngUPolElt,h::RngUPolElt : Easy:=false) -> SeqEnum
 { Normalized Shioda invariants of genus 3 hyperelliptic curve (the invariants must lie in Q, but the curve need not be defined over Q). }
     C := HyperellipticCurve(f,h);
-    return NormalizedShiodaInvariants(C);
+    return NormalizedShiodaInvariants(C : Easy:=Easy);
 end intrinsic;
 
-intrinsic SPQInvariants (f::RngMPolElt) -> SeqEnum
+intrinsic NormalizedDixmierOhnoInvariants (f::RngMPolElt : Easy:=false) -> SeqEnum
 { Normalized Dixmier-Ohno invaraints of smooth plane quartic f(x,y,z)=0 defined over Q. }
-    return NormalizedDixmierOhnoInvariants(f);
+    require VariableWeights(Parent(f)) eq [1,1,1] and IsHomogeneous(f) and Degree(f) eq 4: "Input muste be a ternary quartic form.";
+    R := BaseRing(Parent(f));
+    require Type(R) eq FldRat or Type(R) eq RngInt: "Curve must be defined over Q.";
+    inv, w := DixmierOhnoInvariants(f:normalize);
+    return z where z:=NormalizedProjectiveInvariants(inv,w: Easy:=Easy);
 end intrinsic;
 
-intrinsic SPQInvariants (f::MonStgElt) -> SeqEnum
+intrinsic NormalizedDixmierOhnoInvariants (C::CrvPln : Easy:=false) -> SeqEnum
+{ Normalized Dixmier-Ohno invaraints of smooth plane quartic C:f(x,y,z)=0 defined over Q. }
+    return NormalizedDixmierOhnoInvariants(DefiningPolynomial(C) : Easy:=Easy);
+end intrinsic;
+intrinsic SPQInvariants (f::RngMPolElt : Easy:=false) -> SeqEnum
+{ Normalized Dixmier-Ohno invaraints of smooth plane quartic f(x,y,z)=0 defined over Q. }
+    return NormalizedDixmierOhnoInvariants(f : Easy:=Easy);
+end intrinsic;
+
+intrinsic SPQInvariants (f::MonStgElt : Easy:=false) -> SeqEnum
 { Normalized Dixmier-Ohno invaraints of smooth plane quartic f(x,y,z)=0 defined over Q. }
   R<x,y,z>:=PolynomialRing(Rationals(),3);
-  return SPQInvariants(eval(f));
+  return SPQInvariants(eval(f) : Easy:=Easy);
 end intrinsic;
 
 intrinsic SPQIsIsomorphic(f1::RngMPolElt, f2::RngMPolElt) -> BoolElt, GrpMatElt
 { Tests isomorphism of smooth plane curves f(x,y,z)=0 by computing a matrix M in GL(3,F) such that f1^M is a scalar multiple of f2. Original implementation due to Michael Stoll.}
-    require VariableWeights(Parent(f1)) eq [1,1,1]: "Inputs must be trivariate polynomials.";
-    require IsHomogeneous(f1) and Degree(f1) eq 4 and IsHomogeneous(f2) and Degree(f2) eq 4: "Input polynomials must be ternary quartic forms.";
+    require VariableWeights(Parent(f1)) eq [1,1,1] and IsHomogeneous(f1) and Degree(f1) eq 4 and
+            VariableWeights(Parent(f2)) eq [1,1,1] and IsHomogeneous(f2) and Degree(f2) eq 4: "Inputs must be ternary quartic forms.";
     R := Parent(f1);
     if not IsField(BaseRing(R)) then R:=PolynomialRing(FieldOfFractions(BaseRing(R)),3); f1:=R!f1; f2:=R!f2; end if;
     f2 := R!f2; // make sure both f1 and f2 live in the same structure
@@ -871,6 +1037,18 @@ intrinsic SPQIsIsomorphic(f1::RngMPolElt, f2::RngMPolElt) -> BoolElt, GrpMatElt
     f := f1^M;
     assert LeadingCoefficient(f2)*f eq LeadingCoefficient(f)*f2;
     return true, M;
+end intrinsic;
+
+intrinsic GeometricAutomorphismField(C::CrvHyp) -> Fld
+{ Returns the minimal field over which the all automorphisms of the hyperelliptic curve C are defined. }
+    A := AutomorphismsOfHyperellipticCurve(C:geometric,commonfield:=false);
+    nf := func<K|Degree(K) eq 1 select RationalsAsNumberField() else NormalClosure(AbsoluteField(K))>;
+    K := nf(BaseRing(A[1][1]));
+    for i:=2 to #A do
+        L:=nf(BaseRing(A[i][1]));
+        K:=Compositum(K,L);
+    end for;
+    return K;
 end intrinsic;
 
 intrinsic MonicQuadraticRoots(b::RngIntElt, c::RngIntElt, p::RngIntElt, e:RngIntElt) -> SeqEnum[RngIntElt]
@@ -1080,3 +1258,21 @@ intrinsic PowerClassRepresentative (a::FldFinElt, n::RngIntElt) -> RngIntElt
     return PowerClassRepresentative(Integers()!a,p,n);
 end intrinsic;
 
+intrinsic SquareFree (f::RngUPolElt) -> RngUPolElt, RngUPolElt
+{ Given a univariate polynomial over a field whose characteristic is 0 or exceeds the degree of f, returns polynomials g,h with h monic such that f = g*h^2. }
+    p := Characteristic(BaseRing(f));
+    require p eq 0 or p gt Degree(f): "The input polynomial f must be defined over a field of characterstic p with p=0 or p > deg(f).";
+    // Run a simplified version of Yun's algorithm
+    c := LeadingCoefficient(f); f div:= c;
+    d := GCD(f,Derivative(f));
+    w := f div d;
+    i := 1;
+    h := 1;
+    while w ne 1 do
+        y := GCD(w,d);
+        a,w,d := w div y, y, d div y;
+        h *:= a^Floor(i/2);
+        i +:= 1;
+    end while;
+    return c*(f div h^2), h;
+end intrinsic;
