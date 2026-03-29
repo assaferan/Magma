@@ -1276,3 +1276,45 @@ intrinsic SquareFree (f::RngUPolElt) -> RngUPolElt, RngUPolElt
     end while;
     return c*(f div h^2), h;
 end intrinsic;
+
+// ComplexExtra and RationalsExtra copied from endomorphisms relative.m to remove dependency
+declare attributes FldCom : epscomp, epsinv, height_bound, prec_algdep;
+declare attributes FldRe  : epscomp, epsinv, height_bound, prec_algdep;
+declare attributes FldNum : base, base_gen, CC, iota, aut;
+declare attributes FldRat : base, base_gen, CC, iota, aut;
+
+intrinsic ComplexFieldExtra(prec::RngIntElt) -> FldCom
+{ Returns a complex field of the given precision with the extra attributes epscomp, epsLLL, epsinv and height_bound. }
+    CC := ComplexField(prec);
+    RR := RealField(CC);
+    if prec lt 200 then
+        CC`epscomp := RR ! (10^(-prec + 10)); CC`epsinv  := RR ! 10^(-6); CC`height_bound := 10^6; CC`prec_algdep := prec - 5;
+        RR`epscomp := CC`epscomp; RR`epsinv := CC`epsinv; RR`height_bound := CC`height_bound; RR`prec_algdep := CC`prec_algdep;
+        return CC;
+    end if;
+    CC`epscomp := RR ! (10^(-Round(9.5*prec/10))); CC`epsinv  := RR ! (2^(-prec)); CC`height_bound := RR ! (3^(30 + (prec div 10))); CC`prec_algdep := Round(8*prec/10);
+    RR`epscomp := CC`epscomp; RR`epsinv := CC`epsinv; RR`height_bound := CC`height_bound; RR`prec_algdep := CC`prec_algdep;
+    return CC;
+end intrinsic;
+
+intrinsic ComplexFieldExtra() -> FldCom
+{ Default ComplexFieldExtra with precision 100. }
+    return ComplexFieldExtra(100);
+end intrinsic;
+
+intrinsic InfinitePlacesExtra(K::Fld) -> SeqEnum
+{ The infinite places of K, represented by the roots of the generator in the associated complex field. No identification of complex conjugate places takes place. }
+    return [ tup[1] : tup in Roots(MinimalPolynomial(K.1), ComplexFieldExtra(Precision(K`CC) + 10)) ];
+end intrinsic;
+
+intrinsic RationalsExtra(prec::RngIntElt) -> FldNum
+{ Returns the rationals with itself as base and an infinite place with the given precision. }
+    K := Rationals();
+    K`base := K; K`base_gen := K ! 1; K`CC := ComplexFieldExtra(prec); K`iota := InfinitePlacesExtra(K)[1];
+    return K;
+end intrinsic;
+
+intrinsic RationalsExtra() -> FldNum
+{ Default RationalsExtra with precision 100. }
+    return RationalsExtra(100);
+end intrinsic;
