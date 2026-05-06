@@ -220,7 +220,7 @@ end intrinsic;
 intrinsic FullTorsionDegree (E::CrvEll, n::RngIntElt) -> RngIntElt
 { The degree of the n-torsion field of E. }
     return #TorsionGaloisGroup(E,n);
-end intrinsic
+end intrinsic;
 
 intrinsic TorsionField (E::CrvEll, n::RngIntElt) -> RngIntElt
 { The n-torsion field of E/K, where K is a number field (this can be extremely expensive, use with caution). }
